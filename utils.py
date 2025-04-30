@@ -369,6 +369,6 @@ def mean_cov_pce_quad(a, b, n_pce: int, n_quad: int) -> tuple[np.ndarray, np.nda
             cov_pce_quad[m1, m2, :] -= mean_pce_quad[m1, :] * mean_pce_quad[m2, :]
 
     # Fill in the lower triangular part of the covariance matrix
-    cov_pce_quad = np.triu(cov_pce_quad) + np.tril(cov_pce_quad.T, -1)
+    cov_pce_quad = np.triu(cov_pce_quad) + np.tril(cov_pce_quad.transpose(1, 0, 2), -1)
 
     return (mean_pce_quad, cov_pce_quad)

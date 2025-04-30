@@ -1,8 +1,7 @@
 import numpy as np
 import pandas as pd
+import utils
 from scipy import interpolate, optimize, stats
-
-from utils import SCENARIOS, SECTORS, gauss_legendre
 
 
 class Firm:
@@ -85,11 +84,11 @@ class Firm:
         if theta.shape[0] != c.shape[0]:
             raise ValueError("`theta` and `c` must have the same shape.")
 
-        if scenario not in SCENARIOS:
-            raise ValueError(f"`scenario` not in {SCENARIOS}.")
+        if scenario not in utils.SCENARIOS:
+            raise ValueError(f"`scenario` not in {utils.SCENARIOS}.")
 
-        if sector not in SECTORS:
-            raise ValueError(f"`sector` not in {SECTORS}.")
+        if sector not in utils.SECTORS:
+            raise ValueError(f"`sector` not in {utils.SECTORS}.")
 
         self.n_energy = c.shape[0]
         self.P0 = P0
@@ -123,7 +122,7 @@ class Firm:
             (df_ssp["REGION"] == "World")
             & (df_ssp["VARIABLE"] == f"CMIP6 Emissions|CO2|{self.sector}")
         ].reset_index(drop=True)
-        df = df0[df0["SCENARIO"].isin(SCENARIOS)][
+        df = df0[df0["SCENARIO"].isin(utils.SCENARIOS)][
             [
                 "SCENARIO",
                 "2015",
@@ -245,7 +244,7 @@ class Firm:
         if not u >= t:
             raise ValueError("u must be greater or equal than t.")
 
-        knots, weights = gauss_legendre(a=t, b=u, n=n_leg)
+        knots, weights = utils.gauss_legendre(a=t, b=u, n=n_leg)
         c_theta_gamma = np.sum(
             (self.c * self.theta)[:, None] * self.gamma_optimal_energy(t=knots),
             axis=0,
@@ -308,30 +307,33 @@ class Firm:
 
         return log_prod
 
-    def h(self, t, x, n_leg=20):
+    def h(self, t, x, n_leg=20, return_integrand: bool = False):
         """
         Compute the firm's optimal value using the function `h`.
 
         The function `h` is defined as:
-        h(t, p_t) = V_t with p_t = optimal log production at time `t`.
+        h(t, x) = V_t with x = log production at time `t`.
 
         Parameters
         ----------
         t: float
             Current time.
-        x: float
+        x: float or array-like
             Log production.
         n_leg : int, optional
             Number of nodes for Gauss-Legendre quadrature (default is 20).
+        return_integrand: bool, optional
+            If True, return the integrand components instead of the optimal value.
 
         Returns
         -------
         opt_value : float or array-like
-            Optimal firm's value.
+            Optimal firm's value if `return_integrand` is False.
+        integrand_components : dict
+            Components of the integrand if `return_integrand` is True.
         """
         x = np.atleast_1d(x)
-        knots, weights = gauss_legendre(a=t, b=self.T_final, n=n_leg)
-
+        knots, weights = utils.gauss_legendre(a=t, b=self.T_final, n=n_leg)
         gamma_opt_knots = self.gamma_optimal(knots)
         gamma_opt_e_knots = self.gamma_optimal_energy(knots)
         f_scen_knots = self.f_scenario(knots)
@@ -353,6 +355,17 @@ class Firm:
         integrand_penal = self.w_1 * np.maximum(gamma_opt_knots - f_scen_knots, 0) ** 2
         integrand_reward = self.w_2 * np.maximum(f_scen_knots - gamma_opt_knots, 0) ** 2
 
+        if return_integrand:
+            return {
+                "knots": knots,
+                "weights": weights,
+                "integrand_mean_cov": integrand_mean_cov,
+                "integrand_penal": integrand_penal,
+                "integrand_reward": integrand_reward,
+                "integrand_alpha_beta": integrand_alpha_beta,
+                "discount_knots": discount_knots,
+            }
+
         integrand = (
             integrand_mean_cov
             - integrand_alpha_beta[:, None]
@@ -362,24 +375,6 @@ class Firm:
         optimal_value = np.sum((weights * discount_knots)[:, None] * integrand, axis=0)
 
         return optimal_value
-
-    # def derivative_h_x(self, t, x, n_leg=20):
-    #     x = np.atleast_1d(x)
-    #     knots, weights = gauss_legendre(a=t, b=self.T_final, n=n_leg)
-    #     mean_knots = np.array(
-    #         [self.mean_production(u=knot, t=t, n_leg=n_leg) for knot in knots]
-    #     )
-    #     discount_knots = np.exp(-self.r * (knots - t))
-    #     integrand = (
-    #         np.exp(-self.b * (knots - t))[:, None]
-    #         * self.n_units
-    #         * np.exp(
-    #             np.exp(-self.b * (knots - t))[:, None] * x[None, :]
-    #             + mean_knots[:, None]
-    #             + 0.5 * self.variance_production(knots - t)[:, None]
-    #         )
-    #     )
-    #     return np.sum((weights * discount_knots)[:, None] * integrand, axis=0)
 
     def proba_default_merton(self, t, L_t, n_leg=20):
         """
@@ -398,29 +393,32 @@ class Firm:
 
         Returns
         -------
-        prob_default : float
+        float
             Probability of default at time t.
         """
 
-        knots, weights = gauss_legendre(a=t, b=self.T_final, n=n_leg)
-        gamma_opt_knots = self.gamma_optimal(knots)
-        gamma_opt_e_knots = self.gamma_optimal_energy(knots)
-        f_scen_knots = self.f_scenario(knots)
-        discount_knots = np.exp(-self.r * (knots - t))
-        mean_knots = np.array(
-            [self.mean_production(u=knot, t=t, n_leg=n_leg) for knot in knots]
+        res = self.h(t=t, x=0.0, n_leg=n_leg, return_integrand=True)
+        (
+            knots,
+            weights,
+            integrand_mean_cov,
+            integrand_penal,
+            integrand_reward,
+            integrand_alpha_beta,
+            discount_knots,
+        ) = (
+            res[k]
+            for k in [
+                "knots",
+                "weights",
+                "integrand_mean_cov",
+                "integrand_penal",
+                "integrand_reward",
+                "integrand_alpha_beta",
+                "discount_knots",
+            ]
         )
-
-        integrand_mean_cov = self.n_units * np.exp(
-            mean_knots + 0.5 * self.variance_production(knots - t)
-        )
-        integrand_alpha_beta = np.sum(
-            (self.alpha * self.theta)[:, None] * gamma_opt_e_knots
-            + (self.beta * self.theta)[:, None] * gamma_opt_e_knots**2,
-            axis=0,
-        )
-        integrand_penal = self.w_1 * np.maximum(gamma_opt_knots - f_scen_knots, 0) ** 2
-        integrand_reward = self.w_2 * np.maximum(f_scen_knots - gamma_opt_knots, 0) ** 2
+        integrand_mean_cov = integrand_mean_cov.ravel()
 
         integrand_no_x = -integrand_alpha_beta - integrand_penal + integrand_reward
         integral_no_x = np.sum(weights * discount_knots * integrand_no_x)
@@ -432,16 +430,15 @@ class Firm:
             return (h_x - L_t) ** 2
 
         h_T_inv_L = optimize.minimize_scalar(fun=fun).x
-        tmp_ = (
+        tmp = (
             h_T_inv_L
             - (
                 self.mean_production(u=t, t=0.0, n_leg=n_leg)
                 + np.exp(-self.b * t) * np.log(self.P0)
             )
         ) / np.sqrt(self.variance_production(t))
-        prob_default = stats.norm.cdf(tmp_)
 
-        return prob_default
+        return stats.norm.cdf(tmp)
 
     @staticmethod
     def default_boundary_unpenalized(firm_no_pen, t, lbd_ref, n_leg=20):
@@ -480,10 +477,6 @@ class Firm:
 
         if firm_no_pen.w_2 != 0.0:
             raise ValueError("Reward coefficient w_2 must be greater or equal to 0.")
-
-        # params_no_pen = params.copy()
-        # params_no_pen.update({"w_1": 0.0, "w_2": 0.0})
-        # firm_no_pen = cls(**params_no_pen)
 
         x = (
             stats.norm.ppf(1.0 - np.exp(-lbd_ref * t))
