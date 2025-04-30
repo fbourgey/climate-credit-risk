@@ -1,3 +1,6 @@
+[tool.hatch.build.targets.wheel]
+packages = ["climate_credit_risk"]
+
 [project]
 name = "climate-credit-risk-os"
 version = "0.1.0"

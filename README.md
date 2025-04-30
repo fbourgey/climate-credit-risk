@@ -82,12 +82,15 @@ To set up the environment and install dependencies, follow these steps:
    pip install .
    ```
 
-After setting up the environment, you can run the scripts and notebooks in this repository to reproduce the results presented in the paper.
+After setting up the environment, you can run the scripts and notebooks in this
+ repository to reproduce the results presented in the paper.
 
 ## Repository Structure
 
-- **`firm.py`**: Contains the `Firm` class, which models a single firm's optimal carbon emission strategy.
-- **`portfolio.ipynb`**: Jupyter Notebook for analyzing and visualizing the climate risks of a credit portfolio.
+- **`firm.py`**: Contains the `Firm` class, which models a single firm's optimal
+  carbon emission strategy.
+- **`portfolio.ipynb`**: Jupyter Notebook for analyzing and visualizing the
+  climate risks of a credit portfolio.
 - **`utils.py`**: Utility functions and constants used across the project.
 
 ## License
