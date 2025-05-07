@@ -13,7 +13,7 @@ It also defines constants for plotting and scenario configurations.
 import math
 
 import numpy as np
-from scipy import special, stats, sparse
+from scipy import sparse, special, stats
 from tqdm import tqdm
 
 # Colors used in plots
