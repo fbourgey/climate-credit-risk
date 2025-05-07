@@ -427,11 +427,11 @@ def compute_inertia(tab_n, n_mc, b_min=0, b_max=1, t=1.0):
                 * (1 - np.exp(-(b_rep + b_rep.T) * t))
                 / (b_rep + b_rep.T)
             )
-            eig_X, _ = sparse.linalg.eigs(cov_x, k=2)
-            eig_X = np.real(eig_X)
+            eig_x, _ = sparse.linalg.eigs(cov_x, k=2)
+            eig_x = np.real(eig_x)
             eig_sum = np.trace(cov_x)
-            inertia_n_1f[i] = eig_X[0] / eig_sum
-            inertia_n_2f[i] = (eig_X[0] + eig_X[1]) / eig_sum
+            inertia_n_1f[i] = eig_x[0] / eig_sum
+            inertia_n_2f[i] = (eig_x[0] + eig_x[1]) / eig_sum
 
         mean_1f = np.mean(inertia_n_1f)
         mean_2f = np.mean(inertia_n_2f)
@@ -504,19 +504,13 @@ def compute_loss_pca_pce(
     shape_eps = int((n_pce + 1) * (n_pce + 2) / 2)
     range_pce = np.arange(n_pce + 1)
     tab_m1 = np.array([int(m1) for m in range_pce for m1 in np.arange(m + 1)])
-    tab_m2 = np.array(
-        [int(m2) for m in range_pce for m2 in reversed(np.arange(m + 1))]
-    )
+    tab_m2 = np.array([int(m2) for m in range_pce for m2 in reversed(np.arange(m + 1))])
     tab_multi = np.array(
         [special.comb(m, m1) for m in range_pce for m1 in np.arange(m + 1)]
     )
 
-    l1_normalized_m1 = np.array(
-        [l1_normalized[i] ** tab_m1 for i in range(n_firms)]
-    ).T
-    l2_normalized_m2 = np.array(
-        [l2_normalized[i] ** tab_m2 for i in range(n_firms)]
-    ).T
+    l1_normalized_m1 = np.array([l1_normalized[i] ** tab_m1 for i in range(n_firms)]).T
+    l2_normalized_m2 = np.array([l2_normalized[i] ** tab_m2 for i in range(n_firms)]).T
 
     _mean_a_pce, _cov_a_pce = mean_cov_pce_quad(
         a=std_a_normalized, b=mean_a_normalized, n_pce=n_pce, n_quad=n_quad
@@ -556,15 +550,11 @@ def compute_loss_pca_pce(
     mat_m1 = np.tile(tab_m1, (shape_eps, 1))
     mat_m2 = np.tile(tab_m2, (shape_eps, 1))
     mat_m1_m2 = np.tile(tab_m1 + tab_m2, (shape_eps, 1))
-    mat_l1_normalized = np.array(
-        [l1_normalized[i] ** mat_m1 for i in range(n_firms)]
-    ).T
+    mat_l1_normalized = np.array([l1_normalized[i] ** mat_m1 for i in range(n_firms)]).T
     mat_l1_normalized_transpose = np.array(
         [l1_normalized[i] ** mat_m1.T for i in range(n_firms)]
     ).T
-    mat_l2_normalized = np.array(
-        [l2_normalized[i] ** mat_m2 for i in range(n_firms)]
-    ).T
+    mat_l2_normalized = np.array([l2_normalized[i] ** mat_m2 for i in range(n_firms)]).T
     mat_l2_normalized_transpose = np.array(
         [l2_normalized[i] ** mat_m2.T for i in range(n_firms)]
     ).T
@@ -603,9 +593,7 @@ def compute_loss_pca_pce(
         for idx in range(shape_eps):
             z = np.random.randn(n_mc)
             u_z = u_cov_eps[:, idx][:, None] * z[None, :]
-            vec_eps += (
-                np.sqrt(eigs_cov_eps[idx]) * u_z
-            )
+            vec_eps += np.sqrt(eigs_cov_eps[idx]) * u_z
         vec_eps += mean_eps[:, None]
 
     z1 = np.random.randn(n_mc)

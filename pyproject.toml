@@ -23,6 +23,7 @@ dependencies = [
     "nbqa>=1.9.1",
     "numpy>=2.2.2",
     "pandas>=2.2.3",
+    "pyink>=23.5.0",
     "pylint>=3.3.7",
     "ruff>=0.11.8",
     "scipy>=1.15.1",

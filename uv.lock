@@ -144,6 +144,7 @@ dependencies = [
     { name = "nbqa" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "pyink" },
     { name = "pylint" },
     { name = "ruff" },
     { name = "scipy" },
@@ -165,6 +166,7 @@ requires-dist = [
     { name = "nbqa", specifier = ">=1.9.1" },
     { name = "numpy", specifier = ">=2.2.2" },
     { name = "pandas", specifier = ">=2.2.3" },
+    { name = "pyink", specifier = ">=23.5.0" },
     { name = "pylint", specifier = ">=3.3.7" },
     { name = "ruff", specifier = ">=0.11.8" },
     { name = "scipy", specifier = ">=1.15.1" },
@@ -944,6 +946,23 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7c/2d/c3338d48ea6cc0feb8446d8e6937e1408088a72a39937982cc6111d17f84/pygments-2.19.1.tar.gz", hash = "sha256:61c16d2a8576dc0649d9f39e089b5f02bcd27fba10d8fb4dcc28173f7a45151f", size = 4968581 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8a/0b/9fcc47d19c48b59121088dd6da2488a49d5f72dacf8262e2790a1d2c7d15/pygments-2.19.1-py3-none-any.whl", hash = "sha256:9ea1544ad55cecf4b8242fab6dd35a93bbce657034b0611ee383099054ab6d8c", size = 1225293 },
+]
+
+[[package]]
+name = "pyink"
+version = "23.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "black" },
+    { name = "click" },
+    { name = "mypy-extensions" },
+    { name = "packaging" },
+    { name = "pathspec" },
+    { name = "platformdirs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8d/41/c6dcf1f789ca5b42de60d7bab02ee31379254aebd41ab1766f35f4877136/pyink-23.5.0.tar.gz", hash = "sha256:589bc3beedb52cefbaa9e1543d374bef1b7a716c96bf7aa852eaf32d6496d969", size = 225994 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/3d/2af2e62b9cc9ab12a347b9cc91f42efae0d160a1d485e58e17808f54d1ea/pyink-23.5.0-py3-none-any.whl", hash = "sha256:c315095036ea6f26952f61eebf1c2fc88920fb054dbef504a36b6e4488f4ed5b", size = 119301 },
 ]
 
 [[package]]
