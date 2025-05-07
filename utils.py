@@ -1,7 +1,20 @@
+"""
+Utility functions for climate credit risk analysis.
+
+This module provides various mathematical and statistical functions, including:
+- Polynomial Chaos Expansion (PCE) computations.
+- Gauss-Hermite and Gauss-Legendre quadrature methods.
+- Cholesky decomposition using SVD.
+- Helper functions for climate scenario analysis.
+
+It also defines constants for plotting and scenario configurations.
+"""
+
 import math
 
 import numpy as np
-from scipy import special, stats
+from scipy import special, stats, sparse
+from tqdm import tqdm
 
 # Colors used in plots
 COLORS = (
@@ -43,7 +56,7 @@ COLORS_SSP = {
 }
 
 
-def cholesky_from_svd(A: np.ndarray) -> np.ndarray:
+def cholesky_from_svd(a: np.ndarray) -> np.ndarray:
     """
     Compute the Cholesky decomposition of a matrix using SVD and QR.
 
@@ -51,7 +64,7 @@ def cholesky_from_svd(A: np.ndarray) -> np.ndarray:
 
     Parameters
     ----------
-    A : np.ndarray
+    a : np.ndarray
         The input matrix.
 
     Returns
@@ -59,11 +72,10 @@ def cholesky_from_svd(A: np.ndarray) -> np.ndarray:
     np.ndarray
         The Cholesky decomposition of the input matrix.
     """
-    U, S, _ = np.linalg.svd(A)
-    B = np.diag(np.sqrt(S)) @ U.T
-    _, R = np.linalg.qr(B)
-    L = R.T
-    return L
+    u, s, _ = np.linalg.svd(a)
+    b = np.diag(np.sqrt(s)) @ u.T
+    _, r = np.linalg.qr(b)
+    return r.T
 
 
 def gauss_legendre(a: float, b: float, n: int) -> tuple[np.ndarray, np.ndarray]:
@@ -225,15 +237,15 @@ def _sigma0_matrix(n: int, a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
     if n == 0:
         return sigma0_n
-    else:
-        sigma0_n[1] = mu_n[1] * (mu_n2[0] - mu_n[0])
-        if n == 1:
-            return sigma0_n
 
-        for i in range(2, n + 1):
-            tmp = b * sigma0_n[i - 1, :] - ((i - 2) / (i - 1)) * sigma0_n[i - 2, :]
-            tmp -= (a**2) * mu_n[1] * mu_n2[i - 1]
-            sigma0_n[i] = tmp / (i * (1 + a**2))
+    sigma0_n[1] = mu_n[1] * (mu_n2[0] - mu_n[0])
+    if n == 1:
+        return sigma0_n
+
+    for i in range(2, n + 1):
+        tmp = b * sigma0_n[i - 1, :] - ((i - 2) / (i - 1)) * sigma0_n[i - 2, :]
+        tmp -= (a**2) * mu_n[1] * mu_n2[i - 1]
+        sigma0_n[i] = tmp / (i * (1 + a**2))
 
     return sigma0_n
 
@@ -372,3 +384,252 @@ def mean_cov_pce_quad(a, b, n_pce: int, n_quad: int) -> tuple[np.ndarray, np.nda
     cov_pce_quad = np.triu(cov_pce_quad) + np.tril(cov_pce_quad.transpose(1, 0, 2), -1)
 
     return (mean_pce_quad, cov_pce_quad)
+
+
+def eig_cov_x(n, b_min, b_max, t=1.0, seed=None):
+    """
+    Compute eigenvalues for covariance matrix X with b = Uniform[b_min, b_max]
+    and the correlations rho = Uniform[-1, 1] for a given time t.
+    """
+    if seed is not None:
+        np.random.seed(seed)
+    b = np.random.uniform(b_min, b_max, size=n)
+    b_rep = np.tile(b, (n, 1))
+    rho = np.random.uniform(-1, 1, size=n)
+    rho_rep = np.tile(rho, (n, 1))
+    cov_x = (
+        (rho_rep * rho_rep.T) * (1 - np.exp(-(b_rep + b_rep.T) * t)) / (b_rep + b_rep.T)
+    )
+    _, eig_x, _ = np.linalg.svd(cov_x)
+    return eig_x
+
+
+def compute_inertia(tab_n, n_mc, b_min=0, b_max=1, t=1.0):
+    """
+    Compute nu_1 / sum(nu_i) and (nu_1 + nu_2) / sum(nu_1)
+    where nu_i is the ith eigenvalue of the the covariance matrix X
+    with b = Uniform[b_min, b_max] and correlations rho = Uniform[-1, 1]
+    for a given time t. Each time, we run n_mc simulations and
+    compute 95% Monte Carlo error.
+    """
+    list_inertia = []
+    list_error = []
+    for n in tqdm(tab_n):
+        inertia_n_1f = np.zeros(n_mc)
+        inertia_n_2f = np.zeros(n_mc)
+        for i in range(n_mc):
+            b = np.random.uniform(b_min, b_max, size=n)
+            rho = np.random.uniform(-1, 1, size=n)
+            rho_rep = np.tile(rho, (n, 1))
+            b_rep = np.tile(b, (n, 1))
+            cov_x = (
+                (rho_rep * rho_rep.T)
+                * (1 - np.exp(-(b_rep + b_rep.T) * t))
+                / (b_rep + b_rep.T)
+            )
+            eig_X, _ = sparse.linalg.eigs(cov_x, k=2)
+            eig_X = np.real(eig_X)
+            eig_sum = np.trace(cov_x)
+            inertia_n_1f[i] = eig_X[0] / eig_sum
+            inertia_n_2f[i] = (eig_X[0] + eig_X[1]) / eig_sum
+
+        mean_1f = np.mean(inertia_n_1f)
+        mean_2f = np.mean(inertia_n_2f)
+        list_inertia.append([mean_1f, mean_2f])
+
+        err_1f = 1.96 * np.std(inertia_n_1f) / np.sqrt(n_mc)
+        err_2f = 1.96 * np.std(inertia_n_2f) / np.sqrt(n_mc)
+        list_error.append([err_1f, err_2f])
+
+    inertia = np.array(list_inertia)
+    error = np.array(list_error)
+
+    return inertia, error
+
+
+def lambda_lgd_ead(idx, n_firms, opt=1):
+    """
+    Compute the Lambda^idx values for the portfolio where
+        Lambda = Loss Given Default (LGD) * Exposure at Default (EAD).
+
+    Parameters:
+    -----------
+    idx : int or array-like
+      Index or indices of obligors.
+    opt : int, optional
+      Option to determine the function used for Lambda^idx:
+      - 1: Homogeneous portfolio, Lambda^idx = 1 / sqrt(i).
+      - 2: Lambda^idx = ceil(5 * idx / n_firms)^2.
+      - Other: Raises a ValueError.
+
+    Returns:
+    --------
+    float or array-like
+      Computed Lambda^idx values.
+
+    Raises:
+    -------
+    ValueError
+      If the `opt` parameter is not 1 or 2.
+    """
+    if opt not in (1, 2):
+        raise ValueError("Check value for opt.")
+    if opt == 1:
+        return 1 / np.sqrt(idx)
+
+    return (np.ceil(5 * idx / n_firms)) ** 2
+
+
+def compute_loss_pca_pce(
+    n_pce: int,
+    n_firms: int,
+    n_mc: int,
+    l1_normalized,
+    l2_normalized,
+    std_a_normalized,
+    mean_a_normalized,
+    tab_lambda,
+    return_mean_cov_eps: bool = False,
+    return_eps_full: bool = False,
+    return_loss_full: bool = False,
+    n_quad: int = 40,
+    seed=None,
+):
+    """
+    Compute PCA/PCE approximation for the portfolio loss.
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    shape_eps = int((n_pce + 1) * (n_pce + 2) / 2)
+    range_pce = np.arange(n_pce + 1)
+    tab_m1 = np.array([int(m1) for m in range_pce for m1 in np.arange(m + 1)])
+    tab_m2 = np.array(
+        [int(m2) for m in range_pce for m2 in reversed(np.arange(m + 1))]
+    )
+    tab_multi = np.array(
+        [special.comb(m, m1) for m in range_pce for m1 in np.arange(m + 1)]
+    )
+
+    l1_normalized_m1 = np.array(
+        [l1_normalized[i] ** tab_m1 for i in range(n_firms)]
+    ).T
+    l2_normalized_m2 = np.array(
+        [l2_normalized[i] ** tab_m2 for i in range(n_firms)]
+    ).T
+
+    _mean_a_pce, _cov_a_pce = mean_cov_pce_quad(
+        a=std_a_normalized, b=mean_a_normalized, n_pce=n_pce, n_quad=n_quad
+    )
+
+    if return_eps_full or return_loss_full:
+        # Simulating vector eps without Gaussian approximation
+        g_ind = np.random.randn(n_firms, n_mc)
+        vec_a = mean_a_normalized[:, None] + std_a_normalized[:, None] * g_ind
+        tau_vec_a_m1_m2 = np.array(
+            [coef_gauss_pce(n=int(m), x=vec_a) for m in range_pce]
+        )[tab_m1 + tab_m2, :, :]
+        # Summing over all firms
+        vec_eps_full = np.sum(
+            tab_lambda[None, :, None]
+            * tab_multi[:, None, None]
+            * tau_vec_a_m1_m2
+            * l1_normalized_m1[:, :, None]
+            * l2_normalized_m2[:, :, None],
+            axis=1,
+        )
+
+        if return_eps_full:
+            return vec_eps_full
+
+    # Mean of the vector eps
+    mean_eps = np.sum(
+        tab_multi[:, None]
+        * tab_lambda[None, :]
+        * _mean_a_pce[tab_m1 + tab_m2, :]
+        * l1_normalized_m1
+        * l2_normalized_m2,
+        axis=1,
+    )
+
+    # Covariance of the vector eps
+    mat_m1 = np.tile(tab_m1, (shape_eps, 1))
+    mat_m2 = np.tile(tab_m2, (shape_eps, 1))
+    mat_m1_m2 = np.tile(tab_m1 + tab_m2, (shape_eps, 1))
+    mat_l1_normalized = np.array(
+        [l1_normalized[i] ** mat_m1 for i in range(n_firms)]
+    ).T
+    mat_l1_normalized_transpose = np.array(
+        [l1_normalized[i] ** mat_m1.T for i in range(n_firms)]
+    ).T
+    mat_l2_normalized = np.array(
+        [l2_normalized[i] ** mat_m2 for i in range(n_firms)]
+    ).T
+    mat_l2_normalized_transpose = np.array(
+        [l2_normalized[i] ** mat_m2.T for i in range(n_firms)]
+    ).T
+
+    mat_multi = np.tile(tab_multi, (shape_eps, 1))
+    cov_eps = (
+        mat_multi
+        * mat_multi.T
+        * np.sum(
+            tab_lambda[None, None, :] ** 2
+            * _cov_a_pce[mat_m1_m2, mat_m1_m2.T, :]
+            * mat_l1_normalized
+            * mat_l2_normalized
+            * mat_l1_normalized_transpose
+            * mat_l2_normalized_transpose,
+            axis=2,
+        )
+    )
+
+    if return_mean_cov_eps:
+        return mean_eps, cov_eps
+
+    try:
+        # Cholesky
+        chol_cov_eps = np.linalg.cholesky(cov_eps)
+        z = np.random.randn(shape_eps, n_mc)
+        vec_eps = mean_eps[:, None] + chol_cov_eps @ z
+    except np.linalg.LinAlgError:
+        # Cholesky from SVD
+        print("Cholesky from SVD")
+        chol_cov_eps = cholesky_from_svd(cov_eps)
+
+        # PCA decomposition
+        u_cov_eps, eigs_cov_eps, _ = np.linalg.svd(cov_eps)
+        vec_eps = np.zeros((eigs_cov_eps.shape[0], n_mc))
+        for idx in range(shape_eps):
+            z = np.random.randn(n_mc)
+            u_z = u_cov_eps[:, idx][:, None] * z[None, :]
+            vec_eps += (
+                np.sqrt(eigs_cov_eps[idx]) * u_z
+            )
+        vec_eps += mean_eps[:, None]
+
+    z1 = np.random.randn(n_mc)
+    z2 = np.random.randn(n_mc)
+    he_m1 = np.array(
+        [
+            special.hermitenorm(
+                tab_m1[i],
+            )(z1)
+            for i in range(shape_eps)
+        ]
+    )
+    he_m2 = np.array(
+        [
+            special.hermitenorm(
+                tab_m2[i],
+            )(z2)
+            for i in range(shape_eps)
+        ]
+    )
+    loss_pca_pce = np.sum(vec_eps * he_m1 * he_m2, axis=0)
+
+    if return_loss_full:
+        loss_pca_pce_full = np.sum(vec_eps * he_m1 * he_m2, axis=0)
+        return loss_pca_pce, loss_pca_pce_full
+
+    return loss_pca_pce

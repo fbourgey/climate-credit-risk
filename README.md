@@ -52,7 +52,7 @@ need to be made:
   language and tooling dependencies.
 - [ ] 🚨 Delete this section of the `README`!
 -->
-# An Efficient SSP-based Methodology for Assessing Climate Risks of a Large Credit Portfolio
+# Assessing Climate Risks of a Large Credit Portfolio
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/bloomberg/climate-credit-risk/badge)](https://scorecard.dev/viewer/?uri=github.com/bloomberg/climate-credit-risk)
 [![Lint](https://github.com/bloomberg/climate-credit-risk/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/marketplace/actions/super-linter)
