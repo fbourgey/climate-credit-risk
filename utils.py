@@ -12,7 +12,9 @@ It also defines constants for plotting and scenario configurations.
 
 import math
 
+import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 from scipy import sparse, special, stats
 from tqdm import tqdm
 
@@ -299,7 +301,9 @@ def cov_gauss_pce(n: int, a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return cov_matrix
 
 
-def mean_cov_pce_quad(a, b, n_pce: int, n_quad: int) -> tuple[np.ndarray, np.ndarray]:
+def mean_cov_pce_quad(
+    a: np.ndarray, b: np.ndarray, n_pce: int, n_quad: int
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Compute the mean vector and covariance matrix of a polynomial chaos expansion (PCE)
     using a Gauss-Hermite quadrature.
@@ -326,62 +330,76 @@ def mean_cov_pce_quad(a, b, n_pce: int, n_quad: int) -> tuple[np.ndarray, np.nda
     a = np.atleast_1d(a)
     b = np.atleast_1d(b)
 
-    # Gauss-Hermite quadrature
+    def compute_mean_pce(w_he, y_he_ab, sig):
+        """
+        Compute the mean vector for the PCE using Gauss-Hermite quadrature.
+        """
+        mean_pce_quad = np.zeros((n_pce + 1, a.shape[0]))
+        for m in range(n_pce + 1):
+            if m == 0:
+                mean_pce_quad[m] = stats.norm.cdf(-b / (1.0 + a**2) ** 0.5)
+            elif m == 1:
+                mean_pce_quad[m] = (
+                    stats.norm.pdf(b / (1.0 + a**2) ** 0.5) / (1.0 + a**2) ** 0.5
+                )
+            else:
+                mean_pce_quad[m] = (
+                    np.sum(
+                        w_he[:, None] * special.hermitenorm(m - 1)(y_he_ab),
+                        axis=0,
+                    )
+                    * sig
+                    * np.exp(-0.5 * b**2 / (a**2 + 1.0))
+                    / (np.sqrt(2.0 * np.pi) * math.factorial(m))
+                )
+        return mean_pce_quad
+
+    def compute_cov_pce(x_he_ab, y_he_ab, w_he, sig, mean_pce_quad):
+        """
+        Compute the covariance matrix for the PCE using Gauss-Hermite
+        quadrature.
+        """
+        cov_pce_quad = np.zeros((n_pce + 1, n_pce + 1, a.shape[0]))
+        for m1 in range(n_pce + 1):
+            if m1 == 0:
+                integrand_m1 = coef_gauss_pce(n=0, x=x_he_ab)
+            else:
+                integrand_m1 = (
+                    special.hermitenorm(m1 - 1)(y_he_ab)
+                    * sig
+                    * np.exp(-0.5 * b**2 / (a**2 + 1.0))
+                    / (np.sqrt(2.0 * np.pi) * math.factorial(m1))
+                )
+            for m2 in range(m1, n_pce + 1):
+                if m2 == 0:
+                    integrand_m2 = coef_gauss_pce(n=0, x=x_he_ab)
+                else:
+                    integrand_m2 = (
+                        special.hermitenorm(m2 - 1)(y_he_ab)
+                        * sig
+                        * np.exp(-0.5 * b**2 / (a**2 + 1.0))
+                        / (np.sqrt(2.0 * np.pi) * math.factorial(m2))
+                    )
+                cov_pce_quad[m1, m2, :] = np.sum(
+                    w_he[:, None] * integrand_m1 * integrand_m2, axis=0
+                )
+                cov_pce_quad[m1, m2, :] -= mean_pce_quad[m1, :] * mean_pce_quad[m2, :]
+
+        # Fill in the lower triangular part of the covariance matrix
+        cov_pce_quad = np.triu(cov_pce_quad) + np.tril(
+            cov_pce_quad.transpose(1, 0, 2), -1
+        )
+        return cov_pce_quad
+
     x_he, w_he = gauss_hermite(n=n_quad)
     x_he_ab = a[None, :] * x_he[:, None] + b[None, :]
     mu = -a * b / (1.0 + a**2)
     sig = 1.0 / np.sqrt(1.0 + a**2)
     y_he_ab = a[None, :] * (sig[None, :] * x_he[:, None] + mu[None, :]) + b[None, :]
 
-    # Mean vector
-    mean_pce_quad = np.zeros((n_pce + 1, a.shape[0]))
-    for m in range(n_pce + 1):
-        if m == 0:
-            mean_pce_quad[m] = stats.norm.cdf(-b / (1.0 + a**2) ** 0.5)
-        elif m == 1:
-            mean_pce_quad[m] = (
-                stats.norm.pdf(b / (1.0 + a**2) ** 0.5) / (1.0 + a**2) ** 0.5
-            )
-        else:
-            mean_pce_quad[m] = (
-                np.sum(
-                    w_he[:, None] * special.hermitenorm(m - 1)(y_he_ab),
-                    axis=0,
-                )
-                * sig
-                * np.exp(-0.5 * b**2 / (a**2 + 1.0))
-                / (np.sqrt(2.0 * np.pi) * math.factorial(m))
-            )
-
-    # Covariance matrix
-    cov_pce_quad = np.zeros((n_pce + 1, n_pce + 1, a.shape[0]))
-    for m1 in range(n_pce + 1):
-        if m1 == 0:
-            integrand_m1 = coef_gauss_pce(n=0, x=x_he_ab)
-        else:
-            integrand_m1 = (
-                special.hermitenorm(m1 - 1)(y_he_ab)
-                * sig
-                * np.exp(-0.5 * b**2 / (a**2 + 1.0))
-                / (np.sqrt(2.0 * np.pi) * math.factorial(m1))
-            )
-        for m2 in range(m1, n_pce + 1):
-            if m2 == 0:
-                integrand_m2 = coef_gauss_pce(n=0, x=x_he_ab)
-            else:
-                integrand_m2 = (
-                    special.hermitenorm(m2 - 1)(y_he_ab)
-                    * sig
-                    * np.exp(-0.5 * b**2 / (a**2 + 1.0))
-                    / (np.sqrt(2.0 * np.pi) * math.factorial(m2))
-                )
-            cov_pce_quad[m1, m2, :] = np.sum(
-                w_he[:, None] * integrand_m1 * integrand_m2, axis=0
-            )
-            cov_pce_quad[m1, m2, :] -= mean_pce_quad[m1, :] * mean_pce_quad[m2, :]
-
-    # Fill in the lower triangular part of the covariance matrix
-    cov_pce_quad = np.triu(cov_pce_quad) + np.tril(cov_pce_quad.transpose(1, 0, 2), -1)
+    # Compute the mean vector and covariance matrix
+    mean_pce_quad = compute_mean_pce(w_he, y_he_ab, sig)
+    cov_pce_quad = compute_cov_pce(x_he_ab, y_he_ab, w_he, sig, mean_pce_quad)
 
     return (mean_pce_quad, cov_pce_quad)
 
@@ -419,32 +437,25 @@ def compute_inertia(tab_n, n_mc, b_min=0, b_max=1, t=1.0):
         inertia_n_2f = np.zeros(n_mc)
         for i in range(n_mc):
             b = np.random.uniform(b_min, b_max, size=n)
+            b = np.tile(b, (n, 1))
             rho = np.random.uniform(-1, 1, size=n)
-            rho_rep = np.tile(rho, (n, 1))
-            b_rep = np.tile(b, (n, 1))
-            cov_x = (
-                (rho_rep * rho_rep.T)
-                * (1 - np.exp(-(b_rep + b_rep.T) * t))
-                / (b_rep + b_rep.T)
-            )
+            rho = np.tile(rho, (n, 1))
+            cov_x = (rho * rho.T) * (1 - np.exp(-(b + b.T) * t)) / (b + b.T)
             eig_x, _ = sparse.linalg.eigs(cov_x, k=2)
             eig_x = np.real(eig_x)
-            eig_sum = np.trace(cov_x)
-            inertia_n_1f[i] = eig_x[0] / eig_sum
-            inertia_n_2f[i] = (eig_x[0] + eig_x[1]) / eig_sum
+            inertia_n_1f[i] = eig_x[0] / np.trace(cov_x)
+            inertia_n_2f[i] = (eig_x[0] + eig_x[1]) / np.trace(cov_x)
 
-        mean_1f = np.mean(inertia_n_1f)
-        mean_2f = np.mean(inertia_n_2f)
-        list_inertia.append([mean_1f, mean_2f])
+        list_inertia.append([np.mean(inertia_n_1f), np.mean(inertia_n_2f)])
 
-        err_1f = 1.96 * np.std(inertia_n_1f) / np.sqrt(n_mc)
-        err_2f = 1.96 * np.std(inertia_n_2f) / np.sqrt(n_mc)
-        list_error.append([err_1f, err_2f])
+        list_error.append(
+            [
+                1.96 * np.std(inertia_n_1f) / np.sqrt(n_mc),
+                1.96 * np.std(inertia_n_2f) / np.sqrt(n_mc),
+            ]
+        )
 
-    inertia = np.array(list_inertia)
-    error = np.array(list_error)
-
-    return inertia, error
+    return np.array(list_inertia), np.array(list_error)
 
 
 def lambda_lgd_ead(idx, n_firms, opt=1):
@@ -621,3 +632,24 @@ def compute_loss_pca_pce(
         return loss_pca_pce, loss_pca_pce_full
 
     return loss_pca_pce
+
+
+def set_plot_style() -> None:
+    """Set default matplotlib parameters."""
+    plt.rcParams["figure.figsize"] = [9.0, 7.0]
+    sns.set_style(
+        style="ticks",
+        rc={
+            "axes.grid": True,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+        },
+    )
+    sns.set_context(
+        context="poster",
+        rc={
+            "grid.linewidth": 1.0,
+            "legend.fontsize": "x-small",
+            "legend.title_fontsize": "xx-small",
+        },
+    )
