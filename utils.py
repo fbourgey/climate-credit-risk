@@ -11,6 +11,7 @@ It also defines constants for plotting and scenario configurations.
 """
 
 import math
+from typing import Any, Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -491,147 +492,190 @@ def lambda_lgd_ead(idx, n_firms, opt=1):
     return (np.ceil(5 * idx / n_firms)) ** 2
 
 
+def compute_multi_index(n_pce: int):
+    """
+    Compute the multi-index for PCE coefficients.
+    """
+    tab_multi_idx = np.array(
+        [
+            [int(m1), int(m - m1), int(special.comb(m, m1))]
+            for m in np.arange(n_pce + 1)
+            for m1 in np.arange(m + 1)
+        ]
+    ).T
+    m1 = tab_multi_idx[0, :]
+    m2 = tab_multi_idx[1, :]
+    m_comb = tab_multi_idx[2, :]
+    return m1, m2, m_comb
+
+
 def compute_loss_pca_pce(
     n_pce: int,
     n_firms: int,
     n_mc: int,
-    l1_normalized,
-    l2_normalized,
-    std_a_normalized,
-    mean_a_normalized,
-    tab_lambda,
-    return_mean_cov_eps: bool = False,
-    return_eps_full: bool = False,
-    return_loss_full: bool = False,
-    n_quad: int = 40,
-    seed=None,
+    params: Dict[str, Any],
+    **kwargs,
 ):
     """
     Compute PCA/PCE approximation for the portfolio loss.
+
+    Parameters
+    ----------
+    n_pce : int
+        Order of the PCE.
+    n_firms : int
+        Number of firms.
+    n_mc : int
+        Number of Monte Carlo simulations.
+    params : Dict[str, Any]
+        Dictionary containing required parameters like l1_normalized, l2_normalized, etc.
+    **kwargs : dict
+        Optional arguments:
+        - return_mean_cov_eps (bool): Whether to return mean and covariance of eps.
+        - return_eps_full (bool): Whether to return the full eps vector.
+        - return_loss_full (bool): Whether to return the full loss vector.
+        - n_quad (int): Number of quadrature points (default: 40).
+        - seed (int): Random seed for reproducibility (default: None).
+
+    Returns
+    -------
+    Depends on the optional arguments provided.
     """
-    if seed is not None:
-        np.random.seed(seed)
+    # Extract optional arguments with defaults
 
-    shape_eps = int((n_pce + 1) * (n_pce + 2) / 2)
-    range_pce = np.arange(n_pce + 1)
-    tab_m1 = np.array([int(m1) for m in range_pce for m1 in np.arange(m + 1)])
-    tab_m2 = np.array([int(m2) for m in range_pce for m2 in reversed(np.arange(m + 1))])
-    tab_multi = np.array(
-        [special.comb(m, m1) for m in range_pce for m1 in np.arange(m + 1)]
+    if kwargs.get("seed", None) is not None:
+        np.random.seed(kwargs.get("seed", None))
+
+    tab_m1, tab_m2, tab_multi = compute_multi_index(n_pce)
+    l1_normalized_m1 = np.array(
+        [params["l1_normalized"][i] ** tab_m1 for i in range(n_firms)]
+    ).T
+    l2_normalized_m2 = np.array(
+        [params["l2_normalized"][i] ** tab_m2 for i in range(n_firms)]
+    ).T
+
+    if kwargs.get("return_eps_full", False) or kwargs.get("return_loss_full", False):
+
+        def simulate_vec_eps_full():
+            # Simulating vector eps without Gaussian approximation
+            vec_a = params["mean_a_normalized"][:, None] + params["std_a_normalized"][
+                :, None
+            ] * np.random.randn(n_firms, n_mc)
+            tau_vec_a_m1_m2 = np.array(
+                [coef_gauss_pce(n=int(m), x=vec_a) for m in np.arange(n_pce + 1)]
+            )[tab_m1 + tab_m2, :, :]
+
+            # Summing over all firms
+            vec_eps_full = np.sum(
+                params["tab_lambda"][None, :, None]
+                * tab_multi[:, None, None]
+                * tau_vec_a_m1_m2
+                * l1_normalized_m1[:, :, None]
+                * l2_normalized_m2[:, :, None],
+                axis=1,
+            )
+            return vec_eps_full
+
+        vec_eps_full = simulate_vec_eps_full()
+
+        if kwargs.get("return_eps_full", False):
+            return vec_eps_full
+
+    # Product of Hermite polynomials
+    he_m1_m2 = np.array(
+        [
+            special.hermitenorm(tab_m1[i])(np.random.randn(n_mc))
+            * special.hermitenorm(tab_m2[i])(np.random.randn(n_mc))
+            for i in range(int((n_pce + 1) * (n_pce + 2) / 2))
+        ]
     )
 
-    l1_normalized_m1 = np.array([l1_normalized[i] ** tab_m1 for i in range(n_firms)]).T
-    l2_normalized_m2 = np.array([l2_normalized[i] ** tab_m2 for i in range(n_firms)]).T
+    if kwargs.get("return_loss_full", False):
+        return np.sum(vec_eps_full * he_m1_m2, axis=0)
 
-    _mean_a_pce, _cov_a_pce = mean_cov_pce_quad(
-        a=std_a_normalized, b=mean_a_normalized, n_pce=n_pce, n_quad=n_quad
-    )
+    def get_cov_eps():
+        """Compute the mean and covariance matrix of the vector eps."""
+        _mean_a_pce, _cov_a_pce = mean_cov_pce_quad(
+            a=params["std_a_normalized"],
+            b=params["mean_a_normalized"],
+            n_pce=n_pce,
+            n_quad=kwargs.get("n_quad", 40),
+        )
 
-    if return_eps_full or return_loss_full:
-        # Simulating vector eps without Gaussian approximation
-        g_ind = np.random.randn(n_firms, n_mc)
-        vec_a = mean_a_normalized[:, None] + std_a_normalized[:, None] * g_ind
-        tau_vec_a_m1_m2 = np.array(
-            [coef_gauss_pce(n=int(m), x=vec_a) for m in range_pce]
-        )[tab_m1 + tab_m2, :, :]
-        # Summing over all firms
-        vec_eps_full = np.sum(
-            tab_lambda[None, :, None]
-            * tab_multi[:, None, None]
-            * tau_vec_a_m1_m2
-            * l1_normalized_m1[:, :, None]
-            * l2_normalized_m2[:, :, None],
+        # Mean of the vector eps
+        mean_eps = np.sum(
+            tab_multi[:, None]
+            * params["tab_lambda"][None, :]
+            * _mean_a_pce[tab_m1 + tab_m2, :]
+            * l1_normalized_m1
+            * l2_normalized_m2,
             axis=1,
         )
 
-        if return_eps_full:
-            return vec_eps_full
+        n_eps = int((n_pce + 1) * (n_pce + 2) / 2)  # shape of the vector eps
+        # Covariance of the vector eps
+        mat_m1 = np.tile(tab_m1, (n_eps, 1))
+        mat_m2 = np.tile(tab_m2, (n_eps, 1))
+        mat_m1_m2 = np.tile(tab_m1 + tab_m2, (n_eps, 1))
+        mat_l1_normalized = np.array(
+            [params["l1_normalized"][i] ** mat_m1 for i in range(n_firms)]
+        ).T
+        mat_l1_normalized_transpose = np.array(
+            [params["l1_normalized"][i] ** mat_m1.T for i in range(n_firms)]
+        ).T
+        mat_l2_normalized = np.array(
+            [params["l2_normalized"][i] ** mat_m2 for i in range(n_firms)]
+        ).T
+        mat_l2_normalized_transpose = np.array(
+            [params["l2_normalized"][i] ** mat_m2.T for i in range(n_firms)]
+        ).T
 
-    # Mean of the vector eps
-    mean_eps = np.sum(
-        tab_multi[:, None]
-        * tab_lambda[None, :]
-        * _mean_a_pce[tab_m1 + tab_m2, :]
-        * l1_normalized_m1
-        * l2_normalized_m2,
-        axis=1,
-    )
-
-    # Covariance of the vector eps
-    mat_m1 = np.tile(tab_m1, (shape_eps, 1))
-    mat_m2 = np.tile(tab_m2, (shape_eps, 1))
-    mat_m1_m2 = np.tile(tab_m1 + tab_m2, (shape_eps, 1))
-    mat_l1_normalized = np.array([l1_normalized[i] ** mat_m1 for i in range(n_firms)]).T
-    mat_l1_normalized_transpose = np.array(
-        [l1_normalized[i] ** mat_m1.T for i in range(n_firms)]
-    ).T
-    mat_l2_normalized = np.array([l2_normalized[i] ** mat_m2 for i in range(n_firms)]).T
-    mat_l2_normalized_transpose = np.array(
-        [l2_normalized[i] ** mat_m2.T for i in range(n_firms)]
-    ).T
-
-    mat_multi = np.tile(tab_multi, (shape_eps, 1))
-    cov_eps = (
-        mat_multi
-        * mat_multi.T
-        * np.sum(
-            tab_lambda[None, None, :] ** 2
-            * _cov_a_pce[mat_m1_m2, mat_m1_m2.T, :]
-            * mat_l1_normalized
-            * mat_l2_normalized
-            * mat_l1_normalized_transpose
-            * mat_l2_normalized_transpose,
-            axis=2,
+        mat_multi = np.tile(tab_multi, (n_eps, 1))
+        cov_eps = (
+            mat_multi
+            * mat_multi.T
+            * np.sum(
+                params["tab_lambda"][None, None, :] ** 2
+                * _cov_a_pce[mat_m1_m2, mat_m1_m2.T, :]
+                * mat_l1_normalized
+                * mat_l2_normalized
+                * mat_l1_normalized_transpose
+                * mat_l2_normalized_transpose,
+                axis=2,
+            )
         )
-    )
-
-    if return_mean_cov_eps:
         return mean_eps, cov_eps
 
-    try:
-        # Cholesky
-        chol_cov_eps = np.linalg.cholesky(cov_eps)
-        z = np.random.randn(shape_eps, n_mc)
-        vec_eps = mean_eps[:, None] + chol_cov_eps @ z
-    except np.linalg.LinAlgError:
-        # Cholesky from SVD
-        print("Cholesky from SVD")
-        chol_cov_eps = cholesky_from_svd(cov_eps)
+    if kwargs.get("return_mean_cov_eps", False):
+        return get_cov_eps()
 
-        # PCA decomposition
-        u_cov_eps, eigs_cov_eps, _ = np.linalg.svd(cov_eps)
-        vec_eps = np.zeros((eigs_cov_eps.shape[0], n_mc))
-        for idx in range(shape_eps):
-            z = np.random.randn(n_mc)
-            u_z = u_cov_eps[:, idx][:, None] * z[None, :]
-            vec_eps += np.sqrt(eigs_cov_eps[idx]) * u_z
-        vec_eps += mean_eps[:, None]
+    def simulate_vec_eps(n_eps, n_mc, mean_eps, cov_eps):
+        """Simulate the vector eps."""
+        try:
+            # Cholesky
+            chol_cov_eps = np.linalg.cholesky(cov_eps)
+            z = np.random.randn(n_eps, n_mc)
+            vec_eps = mean_eps[:, None] + chol_cov_eps @ z
+        except np.linalg.LinAlgError:
+            # # Cholesky from SVD
+            # print("Cholesky from SVD")
+            # chol_cov_eps = cholesky_from_svd(cov_eps)
 
-    z1 = np.random.randn(n_mc)
-    z2 = np.random.randn(n_mc)
-    he_m1 = np.array(
-        [
-            special.hermitenorm(
-                tab_m1[i],
-            )(z1)
-            for i in range(shape_eps)
-        ]
+            # PCA decomposition
+            u_cov_eps, eigs_cov_eps, _ = np.linalg.svd(cov_eps)
+            vec_eps = np.zeros((eigs_cov_eps.shape[0], n_mc))
+            for idx in range(n_eps):
+                z = np.random.randn(n_mc)
+                u_z = u_cov_eps[:, idx][:, None] * z[None, :]
+                vec_eps += np.sqrt(eigs_cov_eps[idx]) * u_z
+            vec_eps += mean_eps[:, None]
+        return vec_eps
+
+    return np.sum(
+        simulate_vec_eps(int((n_pce + 1) * (n_pce + 2) / 2), n_mc, *get_cov_eps())
+        * he_m1_m2,
+        axis=0,
     )
-    he_m2 = np.array(
-        [
-            special.hermitenorm(
-                tab_m2[i],
-            )(z2)
-            for i in range(shape_eps)
-        ]
-    )
-    loss_pca_pce = np.sum(vec_eps * he_m1 * he_m2, axis=0)
-
-    if return_loss_full:
-        loss_pca_pce_full = np.sum(vec_eps * he_m1 * he_m2, axis=0)
-        return loss_pca_pce, loss_pca_pce_full
-
-    return loss_pca_pce
 
 
 def set_plot_style() -> None:
