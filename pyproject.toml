@@ -29,9 +29,7 @@ dependencies = [
     "scipy>=1.15.1",
     "seaborn>=0.13.2",
     "tqdm>=4.67.1",
-    "types-tqdm>=4.67.0.20250417",
 ]
 
-[[tool.mypy.overrides]]
-module = "scipy.*"
+[tool.mypy]
 ignore_missing_imports = true
