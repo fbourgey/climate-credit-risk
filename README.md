@@ -4,9 +4,19 @@
 [![Lint](https://github.com/bloomberg/climate-credit-risk/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/marketplace/actions/super-linter)
 [![Contributor-Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-fbab2c.svg)](CODE_OF_CONDUCT.md)
 
-This repository contains the code to reproduce the results of the paper
-[An Efficient SSP-based Methodology for Assessing Climate
-Risks of a Large Credit Portfolio](https://hal.science/hal-04665712/document).
+This repository contains the code to reproduce the results presented in the following papers:
+
+- > **Bourgey, F., Gobet, E., & Jiao, Y. (2024).**  
+  *Bridging socioeconomic pathways of CO₂ emission and credit risk.*  
+  *Annals of Operations Research*, 336(1), 1197–1218.  
+  [https://doi.org/10.1007/s10479-022-05135-y](https://doi.org/10.1007/s10479-022-05135-y)
+
+  A preprint is available on HAL: [hal-03458299v2](https://hal.science/hal-03458299v2).  
+  The corresponding Jupyter notebook is [`firm.ipynb`](./firm.ipynb).
+
+- > **Bourgey, F., Gobet, E., & Jiao, Y. (2024).**  
+  *An efficient SSP-based methodology for assessing climate risks of a large credit portfolio.*  
+  HAL preprint: [hal-04665712v2](https://hal.science/hal-04665712v2)
 
 ## Installation
 
