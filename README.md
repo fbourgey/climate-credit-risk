@@ -54,16 +54,16 @@ repository to reproduce the results presented in the paper.
 
 The repository is organized as follows:
 
-- **`firm.py`**: Contains the `Firm` class, which models a single firm's
+- **[`firm.py`](./firm.py)**: Contains the `Firm` class, which models a single firm's
   optimal carbon emission strategy.
-- **`utils.py`**: Utility functions and constants used across the project.
-- **`firm.ipynb`**: Notebook for single firm analysis.
-- **`opt_emission_decomp.ipynb`**: Notebook for optimal emission decomposition
+- **[`utils.py`](./utils.py)**: Utility functions and constants used across the project.
+- **[`firm.ipynb`](./firm.ipynb)**: Notebook for single firm analysis.
+- **[`opt_emission_decomp.ipynb`](./opt_emission_decomp.ipynb)**: Notebook for optimal emission decomposition
   for a specific firm, scenario, and sector.
-- **`pca.ipynb`**: Notebook to investigate the PCA approximation.
-- **`portfolio.ipynb`**: Notebook to analyze and visualize the climate risks
+- **[`pca.ipynb`](./pca.ipynb)**: Notebook to investigate the PCA approximation.
+- **[`portfolio.ipynb`](./portfolio.ipynb)**: Notebook to analyze and visualize the climate risks
   of a credit portfolio.
-- **`rhs_l1_error.ipynb`**: Notebook to study the L1 error between the PCA
+- **[`rhs_l1_error.ipynb`](./rhs_l1_error.ipynb)**: Notebook to study the L1 error between the PCA
   loss and the exact loss.
 
 ## License
